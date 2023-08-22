@@ -6,6 +6,17 @@ main:
     ; Just halt the execution:
     hlt
 
+    ; Setup data segments:
+    mov ax, 0
+    mov ds, ax
+    mov es, ax
+
+    ; Setup the stack (The stack grows downwards, so setting it to where the program
+    ; is loaded in memory would protect the program from getting overwritten):
+    mov ss, ax
+    mov sp 0x7C00
+
+
 ; In certain cases, the CPU might start executing again after halting. To prevent it
 ; from executing beyond the program, the following code will get the CPU stuck in an
 ; infinite loop:

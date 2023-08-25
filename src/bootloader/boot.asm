@@ -82,18 +82,45 @@ main:
     mov ss, ax
     mov sp, 0x7C00
 
+    ; read something from floppy disk
+    ; BIOS should set DL to drive number
+    mov [ebr_drive_number], dl
+
+    mov ax, 1                               ; LBA=1,second sector from disk
+    mov cl, 1                               ; 1 sector to read
+    mov bx, 0x7E00                          ; data should be after the bootloader
+    call disk_read
+
     ; Print a message:
-    mov si, hello_message
+    mov si, msg_hello
     call puts
 
     ; Just halt the execution:
+    cli
     hlt
 
+
+;
+; Error handlers
+;
+
+floppy_error:
+    mov si, msg_read_failed
+    call puts
+
+    jmp wait_key_and_reboot
+
+wait_key_and_reboot:
+    mov ah, 0
+    int 16h                     ; wait for key press
+    jmp 0FFFFh:0                ; jump to the BIOS's starting point, causing reboot
 
 ; In certain cases, the CPU might start executing again after halting. To prevent it
 ; from executing beyond the program, the following code will get the CPU stuck in an
 ; infinite loop:
 .halt:
+    cli                         ; disable interrupts, preventing the CPU from getting
+                                ; out of here
     jmp .halt
 
 
@@ -133,7 +160,79 @@ lba_to_chs:
     ret
 
 
-hello_message: db 'Snake OS!', ENDL, 0
+;
+; Reads sectors from the disk
+; Parameters:
+;   - ax: LBA address
+;   - cl: number of sectors to read (up to 128)
+;   - dl: drive number
+;   - es:bx: the memory address in which the data will be stored
+;
+disk_read:
+    ; Save the registers that are going to be modified:
+    push ax
+    push bx
+    push cx
+    push dx
+    push di
+
+    push cx                                 ; save CL (the number of sectors to read)
+    call lba_to_chs                         ; calculate CHS
+    pop ax                                  ; AL = number of sectors to read
+    
+    ; Since floppy disks are unreliable, the read operation should be attempted multiple times
+
+    mov ah, 02h
+    mov di, 3                               ; retries count
+
+.retry:
+    pusha                                   ; save all the registers since it's not possible
+                                            ; to tell which registers will the BIOS modify
+    stc                                     ; set the carry flag since some BIOSs don't
+    int 13h                                 ; on success, carry flag will be cleared
+    jnc .done                               ; done if carry was not set
+
+    ; read failed
+    popa                                    ; restore the values of the registers
+    call disk_reset
+
+    dec di
+    test di, di
+    jnz .retry
+
+.fail:
+    ; despite all the attepts, still failed
+    jmp floppy_error
+
+.done:
+    popa
+
+    ; Restore the modified registers:
+    pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+    ret
+
+
+;
+; Resets disk controller
+; Parameters
+;   - dl: drive number
+;
+disk_reset:
+    pusha
+    mov ah, 0
+    stc
+    int 13h
+    jc floppy_error
+    popa
+    ret
+
+
+msg_hello: db 'Snake OS!', ENDL, 0
+msg_read_failed: db 'Failed to read from disk!', ENDL, 0
 
 ; BIOS Signature: The BIOS expects that the last two bytes of the first sector are
 ; 0xAA55. The program is currently designed to be put on a standard 1.44MB Floppy

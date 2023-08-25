@@ -96,6 +96,43 @@ main:
 .halt:
     jmp .halt
 
+
+;
+; Disk routines
+;
+
+; Converts an LBA addres to a CHS address
+; Parameters:
+;   - ax: LBA address
+; Returns:
+;   - cx [bits 0-5]: sector number
+;   - cx [bits 6-15]: cylender
+;   - dh: head
+;
+lba_to_chs:
+    push ax
+    push dx
+
+    xor dx, dx                          ; reset dx
+    div word [bdb_sectors_per_track]    ; ax = LBA / bdb_sectors_per_track
+                                        ; dx = LBA % bdb_sectors_per_track
+    inc dx                              ; dx = (LBA % bdb_sectors_per_track + 1) = sector
+    mov cx, dx                          ; cx = sector
+
+    xor dx, dx                          ; dx = 0
+    div word [bdb_heads_count]          ; ax = (LBA / bdb_sectors_per_track) / Heads = cylender
+                                        ; dx = (LBA / bdb_sectors_per_track) % Heads = head
+    mov dh, dl                          ; dh = head
+    mov ch, al                          ; ch = cylender (lower 8 bits)
+    shl ah, 6
+    or cl, ah                           ; put upper 2 bits og cylender in CL
+
+    pop ax
+    mov dl, al                          ; restore DL
+    pop ax
+    ret
+
+
 hello_message: db 'Snake OS!', ENDL, 0
 
 ; BIOS Signature: The BIOS expects that the last two bytes of the first sector are
